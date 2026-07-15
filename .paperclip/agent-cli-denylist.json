@@ -1,0 +1,17 @@
+{
+  "_comment": "Deny-list de comandos para o agente Code Reviewer no Paperclip. A IA pode editar arquivos e chamar MCPs (GitHub/Linear/Sentry), mas NUNCA versionar/publicar código. O commit+push do auto-fix é feito por scripts/commit-fix.sh ou pelo job trusted-commit da CI.",
+  "deny": [
+    "git push",
+    "git commit",
+    "git merge",
+    "git rebase",
+    "git reset --hard",
+    "gh pr merge",
+    "gh pr review --approve"
+  ],
+  "allow": [
+    "git status",
+    "git diff",
+    "git log"
+  ]
+}

@@ -1,0 +1,70 @@
+name: paperclip-code-review
+
+# Camada de acknowledgment + trilha do review orquestrado pelo Paperclip.
+# O REVIEW em si roda no Paperclip (local, via routine de polling); este workflow
+# dá o feedback visual imediato ao dev e serve de gancho de auditoria.
+#
+# Segurança: a IA NÃO faz push/commit. Quem commita o auto-fix é o passo "trusted-commit"
+# abaixo (ou o script local scripts/commit-fix.sh no modelo de polling) — nunca o agente.
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  pull-requests: write
+  issues: write
+  contents: write
+
+jobs:
+  acknowledge:
+    # Só roda em comentários de PR que comecem com /review ou /fix
+    if: >
+      github.event.issue.pull_request &&
+      (startsWith(github.event.comment.body, '/review') ||
+       startsWith(github.event.comment.body, '/fix'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reagir 👀 (acknowledged)
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.reactions.createForIssueComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              comment_id: context.payload.comment.id,
+              content: 'eyes'
+            });
+            const cmd = context.payload.comment.body.trim().split(/\s+/)[0];
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.issue.number,
+              body: `\`${cmd}\` recebido 👀 — orquestrando via Paperclip (6 subagentes + consolidador). ` +
+                    `O resultado será postado como inline comments + summary. A IA não aprova/rejeita; você decide.`
+            });
+
+  # OPCIONAL — só habilite se mover o auto-fix para a CI (modelo in-cloud).
+  # No modelo de polling local, o push do /fix é feito por scripts/commit-fix.sh.
+  trusted-commit:
+    if: >
+      github.event.issue.pull_request &&
+      startsWith(github.event.comment.body, '/fix') &&
+      false   # <- troque para true quando quiser o commit via CI
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout da branch da PR
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+      - name: Commit + push das correções aplicadas pela IA
+        run: |
+          git config user.name  "paperclip-bot"
+          git config user.email "bot@impulso.local"
+          if [ -n "$(git status --porcelain)" ]; then
+            git add -A
+            git commit -m "fix: aplica correções aprovadas no review (via Paperclip) [RESOLVED]"
+            git push
+          else
+            echo "Sem mudanças para commitar."
+          fi
